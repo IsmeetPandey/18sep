@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import re
 
 
@@ -68,7 +68,7 @@ def triage(text: str, reach: int = 0, age_minutes: int = 0) -> TriageResult:
 
 
 def deadline(minutes: int, now: datetime | None = None) -> datetime:
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     return current + timedelta(minutes=minutes)
 
 
