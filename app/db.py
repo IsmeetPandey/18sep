@@ -1,9 +1,9 @@
 """Small SQLite persistence layer with explicit transactions and constraints."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 import sqlite3
-from typing import Iterator
 
 
 SCHEMA = """
