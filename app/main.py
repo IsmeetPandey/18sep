@@ -75,10 +75,13 @@ def ingest(payload: InteractionIn) -> InteractionOut:
              result.intent, result.priority, result.score, "open", deadline(result.sla_minutes, current).isoformat(),
              current.isoformat(), current.isoformat()),
         )
-        interaction_id = int(cursor.lastrowid)
+        if cursor.lastrowid is None:
+            raise RuntimeError("database did not return an interaction id")
+        interaction_id = cursor.lastrowid
         audit(conn, interaction_id, "ingested", "system", "; ".join(result.reasons) or "default triage")
         row = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
-        assert row is not None
+        if row is None:
+            raise RuntimeError("inserted interaction could not be read back")
         return row_to_interaction(row)
 
 
