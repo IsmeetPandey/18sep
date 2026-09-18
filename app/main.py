@@ -1,7 +1,7 @@
 """SignalDesk HTTP API."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import hashlib
 import os
 import sqlite3
@@ -30,7 +30,7 @@ def require_write_access(x_api_key: str | None = Header(default=None)) -> None:
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def row_to_interaction(row: sqlite3.Row) -> InteractionOut:
@@ -44,7 +44,13 @@ def row_to_interaction(row: sqlite3.Row) -> InteractionOut:
     )
 
 
-def audit(conn: sqlite3.Connection, interaction_id: int, event_type: str, actor: str, detail: str) -> None:
+def audit(
+    conn: sqlite3.Connection,
+    interaction_id: int,
+    event_type: str,
+    actor: str,
+    detail: str,
+) -> None:
     conn.execute(
         "INSERT INTO audit_events(interaction_id,event_type,actor,detail,created_at) VALUES(?,?,?,?,?)",
         (interaction_id, event_type, actor, detail, now().isoformat()),
@@ -56,7 +62,12 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/interactions", response_model=InteractionOut, status_code=201, dependencies=[Depends(require_write_access)])
+@app.post(
+    "/interactions",
+    response_model=InteractionOut,
+    status_code=201,
+    dependencies=[Depends(require_write_access)],
+)
 def ingest(payload: InteractionIn) -> InteractionOut:
     current = now()
     result = triage(payload.body, payload.reach)
@@ -78,7 +89,13 @@ def ingest(payload: InteractionIn) -> InteractionOut:
         if cursor.lastrowid is None:
             raise RuntimeError("database did not return an interaction id")
         interaction_id = cursor.lastrowid
-        audit(conn, interaction_id, "ingested", "system", "; ".join(result.reasons) or "default triage")
+        audit(
+            conn,
+            interaction_id,
+            "ingested",
+            "system",
+            "; ".join(result.reasons) or "default triage",
+        )
         row = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         if row is None:
             raise RuntimeError("inserted interaction could not be read back")
@@ -109,8 +126,16 @@ def list_interactions(
         return [row_to_interaction(row) for row in rows]
 
 
-@app.patch("/interactions/{interaction_id}/status", response_model=InteractionOut, dependencies=[Depends(require_write_access)])
-def set_status(interaction_id: int, payload: StatusIn, x_actor: str | None = Header(default=None)) -> InteractionOut:
+@app.patch(
+    "/interactions/{interaction_id}/status",
+    response_model=InteractionOut,
+    dependencies=[Depends(require_write_access)],
+)
+def set_status(
+    interaction_id: int,
+    payload: StatusIn,
+    x_actor: str | None = Header(default=None),
+) -> InteractionOut:
     with connect(DB_PATH) as conn:
         row = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         if row is None:
@@ -120,33 +145,64 @@ def set_status(interaction_id: int, payload: StatusIn, x_actor: str | None = Hea
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         timestamp = now().isoformat()
-        conn.execute("UPDATE interactions SET status=?, updated_at=? WHERE id=?", (payload.status, timestamp, interaction_id))
-        audit(conn, interaction_id, "status_changed", x_actor or "api", f"{row['status']} -> {payload.status}")
+        conn.execute(
+            "UPDATE interactions SET status=?, updated_at=? WHERE id=?",
+            (payload.status, timestamp, interaction_id),
+        )
+        audit(
+            conn,
+            interaction_id,
+            "status_changed",
+            x_actor or "api",
+            f"{row['status']} -> {payload.status}",
+        )
         updated = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         assert updated is not None
         return row_to_interaction(updated)
 
 
-@app.patch("/interactions/{interaction_id}/assignment", response_model=InteractionOut, dependencies=[Depends(require_write_access)])
-def assign(interaction_id: int, payload: AssignmentIn, x_actor: str | None = Header(default=None)) -> InteractionOut:
+@app.patch(
+    "/interactions/{interaction_id}/assignment",
+    response_model=InteractionOut,
+    dependencies=[Depends(require_write_access)],
+)
+def assign(
+    interaction_id: int,
+    payload: AssignmentIn,
+    x_actor: str | None = Header(default=None),
+) -> InteractionOut:
     with connect(DB_PATH) as conn:
         row = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="interaction not found")
-        conn.execute("UPDATE interactions SET assignee=?, updated_at=? WHERE id=?", (payload.assignee, now().isoformat(), interaction_id))
+        conn.execute(
+            "UPDATE interactions SET assignee=?, updated_at=? WHERE id=?",
+            (payload.assignee, now().isoformat(), interaction_id),
+        )
         audit(conn, interaction_id, "assigned", x_actor or "api", payload.assignee or "unassigned")
         updated = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         assert updated is not None
         return row_to_interaction(updated)
 
 
-@app.patch("/interactions/{interaction_id}/draft", response_model=InteractionOut, dependencies=[Depends(require_write_access)])
-def save_draft(interaction_id: int, payload: DraftIn, x_actor: str | None = Header(default=None)) -> InteractionOut:
+@app.patch(
+    "/interactions/{interaction_id}/draft",
+    response_model=InteractionOut,
+    dependencies=[Depends(require_write_access)],
+)
+def save_draft(
+    interaction_id: int,
+    payload: DraftIn,
+    x_actor: str | None = Header(default=None),
+) -> InteractionOut:
     with connect(DB_PATH) as conn:
         row = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="interaction not found")
-        conn.execute("UPDATE interactions SET response_draft=?, updated_at=? WHERE id=?", (payload.draft, now().isoformat(), interaction_id))
+        conn.execute(
+            "UPDATE interactions SET response_draft=?, updated_at=? WHERE id=?",
+            (payload.draft, now().isoformat(), interaction_id),
+        )
         audit(conn, interaction_id, "draft_saved", x_actor or "api", "response draft updated")
         updated = conn.execute("SELECT * FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         assert updated is not None
@@ -154,16 +210,23 @@ def save_draft(interaction_id: int, payload: DraftIn, x_actor: str | None = Head
 
 
 @app.get("/interactions/{interaction_id}/audit", response_model=list[AuditOut])
-def get_audit(interaction_id: int, limit: int = Query(default=100, ge=1, le=MAX_LIMIT)) -> list[AuditOut]:
+def get_audit(
+    interaction_id: int,
+    limit: int = Query(default=100, ge=1, le=MAX_LIMIT),
+) -> list[AuditOut]:
     with connect(DB_PATH) as conn:
         exists = conn.execute("SELECT 1 FROM interactions WHERE id=?", (interaction_id,)).fetchone()
         if exists is None:
             raise HTTPException(status_code=404, detail="interaction not found")
         rows = conn.execute(
-            "SELECT event_type,actor,detail,created_at FROM audit_events WHERE interaction_id=? ORDER BY id DESC LIMIT ?",
+            "SELECT event_type,actor,detail,created_at FROM audit_events "
+            "WHERE interaction_id=? ORDER BY id DESC LIMIT ?",
             (interaction_id, limit),
         ).fetchall()
-        return [AuditOut(**dict(row), created_at=datetime.fromisoformat(row["created_at"])) for row in rows]
+        return [
+            AuditOut(**dict(row), created_at=datetime.fromisoformat(row["created_at"]))
+            for row in rows
+        ]
 
 
 def event_fingerprint(provider: str, event_id: str) -> str:
