@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -25,7 +25,7 @@ def test_spam_is_low_priority() -> None:
 
 
 def test_deadline_is_deterministic() -> None:
-    current = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    current = datetime(2026, 1, 1, tzinfo=UTC)
     assert deadline(30, current).isoformat() == "2026-01-01T00:30:00+00:00"
 
 
